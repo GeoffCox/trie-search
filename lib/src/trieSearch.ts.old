@@ -1,0 +1,188 @@
+import { type Range, createRange } from "./range";
+import { Tokenizer } from "./tokenizer";
+
+export type TrieNode = {
+  children?: Record<string, TrieNode>;
+  startIds?: number[];
+  endIds?: number[];
+};
+
+type InProgressTrieNode = {
+  children: Record<string, TrieNode>;
+  startIds?: number[];
+  endIds?: number[];
+};
+
+export type TrieSearchResult = Range & {
+  searchId: number;
+};
+
+const validateChildNode = (node: TrieNode, key: string, isRootChild: boolean) => {
+  const hasStartIds = node.startIds && node.startIds.length > 0;
+
+  // First children must have a start ID
+  if (isRootChild) {
+    if (!hasStartIds) {
+      throw new Error(`The ${key} node is missing a start ID.`);
+    }
+  } else if (hasStartIds) {
+    // No other children can have a start ID
+    throw new Error(`The ${key} node is an intermediate or end node but has a start ID.`);
+  }
+
+  // Any child without children must end a phrase
+  if (!node.children || Object.keys(node.children).length === 0) {
+    if (!node.endIds || node.endIds.length === 0) {
+      throw new Error(`The ${key} node is missing an end ID and has no children.`);
+    }
+  } else {
+    const nodeChildren = node.children;
+    // Validate each child
+    Object.keys(nodeChildren).forEach((key) => {
+      const child = nodeChildren[key];
+      if (!child) {
+        throw new Error(`The ${key} node is not defined.`);
+      }
+      validateChildNode(child, key, false);
+    });
+  }
+};
+
+const validateNode = (node: TrieNode) => {
+  if (!node) {
+    throw new Error("The node parameter is not defined.");
+  }
+
+  if (node.startIds && node.startIds.length > 0) {
+    throw new Error("The root node has start IDs. Direct children of the root node should start phrases.");
+  }
+
+  if (node.endIds && node.endIds.length > 0) {
+    throw new Error("The root node has end IDs. Descendants of the root node should end phrases.");
+  }
+
+  // Validate children
+  if (node.children) {
+    const nodeChildren = node.children;
+    Object.keys(nodeChildren).forEach((key) => {
+      const child = nodeChildren[key];
+      if (!child) {
+        throw new Error(`The ${key} node is not defined.`);
+      }
+      validateChildNode(child, key, true);
+    });
+  }
+};
+
+/**
+ * Adds a set of tokens to a TrieNode for use in trieSearch.
+ * @param searchTokens A sequence of tokens to search for with trieSearch().
+ * @param node The node to add the search tokens too.
+ * @returns The search ID for this sequence. Corresponds to the startId/endId pair for the sequence added to the node.
+ */
+export const addSearchTokensToTrieNode = (tokenizer: Tokenizer<string>, node: TrieNode): number => {
+  validateNode(node);
+
+  if (!node.children) {
+    node.children = {};
+  }
+
+  // I give each token sequence an ID
+  const searchId = Object.values(node.children).reduce<number>((sum, current) => {
+    const startNode = current as { startIds: number[] };
+    return sum + startNode.startIds.length;
+  }, 0);
+
+  let currentNode = node;
+
+  let i = 0;
+  let token = tokenizer.getToken();
+
+  while (token !== undefined) {
+    currentNode.children = currentNode.children || {};
+    currentNode.children[token] = currentNode.children[token] || {};
+    currentNode = currentNode.children[token];
+
+    // Mark the first token as the start of the sequence
+    if (i === 0) {
+      currentNode.startIds = currentNode.startIds || [];
+      currentNode.startIds.push(searchId);
+    }
+
+    token = tokenizer.getToken();
+    i++;
+
+    // Mark the last token as the end of the sequence
+    if (token === undefined) {
+      currentNode.endIds = currentNode.endIds || [];
+      currentNode.endIds.push(searchId);
+    }
+
+  }
+
+  return searchId;
+};
+
+export const trieSearch = (tokenizer: Tokenizer<string>, node: TrieNode): TrieSearchResult[] => {
+  validateNode(node);
+
+  const result: TrieSearchResult[] = [];
+  const inProgressNodes: InProgressTrieNode[] = [];
+  const matchStarts: Record<number, number> = {};
+
+  let i = 0;
+  let token = tokenizer.getToken();
+  while (token !== undefined) {
+    let p = 0;
+    while (p < inProgressNodes.length) {
+      const progressNode = inProgressNodes[p].children[token];
+      if (progressNode) {
+        progressNode.endIds?.forEach((endId) => {
+          const start = matchStarts[endId];
+          const tokenRange = createRange<TrieSearchResult>({
+            searchId: endId,
+            start: start,
+            end: i + 1,
+          });
+          result.push(tokenRange);
+        });
+
+        if (progressNode.children && Object.keys(progressNode.children).length > 0) {
+          inProgressNodes[p] = progressNode as InProgressTrieNode;
+          p++;
+        } else {
+          inProgressNodes.splice(p, 1);
+        }
+      } else {
+        inProgressNodes.splice(p, 1);
+      }
+    }
+
+    const firstChildNode = node.children?.[token];
+    if (firstChildNode) {
+      // only first children have start IDs
+      const startIds = firstChildNode.startIds as number[];
+      startIds.forEach((startId) => (matchStarts[startId] = i));
+
+      // a first child could be both an end and a start
+      firstChildNode.endIds?.forEach((endId) => {
+        const start = matchStarts[endId];
+        const tokenRange = createRange<TrieSearchResult>({
+          searchId: endId,
+          start: start,
+          end: i + 1,
+        });
+        result.push(tokenRange);
+      });
+
+      if (firstChildNode.children && Object.keys(firstChildNode.children).length > 0) {
+        inProgressNodes.push(firstChildNode as InProgressTrieNode);
+      }
+    }
+
+    token = tokenizer.getToken();
+    i++;
+  }
+
+  return result;
+};

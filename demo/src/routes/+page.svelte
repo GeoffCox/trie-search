@@ -1,68 +1,202 @@
 <script lang="ts">
 	import '@geoffcox/sterling-svelte/css/sterling.css';
-	import { Button, TextArea } from '@geoffcox/sterling-svelte';
-    import { addSearchTokensToTrieNode, trieSearch, type TrieNode, createCharacterTokenizer, createWordTokenizer, trieSearchString, trieSearchNumbers} from "trie-search";
-	import { constitution } from '../constitution';
+	import { Button, Label, List, ListItem, Tab, TabList, TextArea } from '@geoffcox/sterling-svelte';
+	import { trieSearchString, type TrieSearchFoundRange } from 'trie-search';
+	import { constitution as rawConstitution } from '../constitution';
 
-// I can search text for a string and get back the character ranges of occurances
-// triSearch(text: string, searchFor: string) : { start: number, end: number}[]
+	type FormattedSearchResult = { value: string; matched: boolean; searchForIndex: number };
 
+	const constitution = rawConstitution.replaceAll('\n', '');
 
-// I can search text for a set of strings and get back the character ranges of occurances per search string.
-//
+	const emptyStringSearchResults: FormattedSearchResult[] = [
+		{
+			value: constitution,
+			matched: false,
+			searchForIndex: -1
+		}
+	];
 
+	const stringSearchForColors = [
+		'steelblue',
+		'seagreen',
+		'darksalmon',
+		'darkgoldenrod',
+		'mediumpurple',
+		'indianred',
+		'thistle',
+		'palegoldenrod',
+		'silver'
+	];
 
-// I can search a set of tokens for multiple sequence of tokens and get back
-// the range of values that work.
-// trieSearch(textTokens: string[], searchTokens: string[][]) : TrieRange
-// trieSearch(textTokens: TokenStream, searchTokens: string[][])
-// 
+	let selectedSearchType = 'trieSearchString';
 
-// ts(text: string, searchFor: string, tokenizer: Tokenizer = CharacterTokenizer) : TrieRange
-// ts(text: string, searchFor: string[], tokenizer: Tokenizer = CharacterTokenizer) : TrieRange
-// ts(tokens: Iterator<string>, searchFor: Iterator<string>) : TrieRange
-// ts(tokens: Iterator<string>, searchFor: Iterator<Iterator<string>>) : TrieRange
+	let stringSearchFor = 'We the People';
+	let searchForStrings: string[] = [];
+	let selectedSearchFor: string | undefined = undefined;
+	let searchResults: TrieSearchFoundRange[] = [];
 
-    const foo = <T>(iterator: Iterator<T>) => {
-        while (iterator.next()) {
-            console.log('.');
-        }
-    }
+	$: selectedSearchForIndex = selectedSearchFor ? searchForStrings.indexOf(selectedSearchFor) : -1;
 
-	const onSearch = () => {
-		
-        const searchTerms = [
-            "shall be",
-        ];
+	const formatSearchResults = (
+		text: string,
+		ranges: TrieSearchFoundRange[]
+	): FormattedSearchResult[] => {
+		if (ranges.length === 0) {
+			return [
+				{
+					value: text,
+					matched: false,
+					searchForIndex: -1
+				}
+			];
+		}
 
-        const text = constitution;
+		let i = 0;
+		const formattedResults: FormattedSearchResult[] = [];
+		ranges.forEach((result) => {
+			const before = text.slice(i, result.start);
+			if (before.length > 0) {
+				formattedResults.push({
+					value: before,
+					matched: false,
+					searchForIndex: -1
+				});
+			}
+			const matched = text.slice(result.start, result.end);
+			if (matched.length > 0) {
+				formattedResults.push({
+					value: matched,
+					matched: true,
+					searchForIndex: result.searchForIndex
+				});
+			}
+			i = result.end;
+		});
 
-        const searchTokenizers = searchTerms.map(createCharacterTokenizer);
-        const textTokenizer = createCharacterTokenizer(text);
+		const after = text.slice(i);
+		if (after.length > 0) {
+			formattedResults.push({
+				value: after,
+				matched: false,
+				searchForIndex: -1
+			});
+		}
 
-        const node : TrieNode = {};
-        searchTokenizers.forEach(st => addSearchTokensToTrieNode(st, node));
-        const ranges = trieSearch(textTokenizer, node);
-        console.log(text);
-        console.log(searchTerms);
-        console.log(node);
-        console.log(ranges);
+		return formattedResults;
+	};
 
-        ranges.forEach(range => console.log(text.slice(range.start, range.end)));
-        
-        const ranges2 = trieSearchString(text,"shall be");
-        console.log(ranges2);
-        ranges2.forEach(range => console.log(text.slice(range.start, range.end)));
+	$: stringSearchResults = formatSearchResults(
+		constitution,
+		searchResults.filter((sr) => sr.searchForIndex === selectedSearchForIndex)
+	);
 
-        const someNumbers = [10,15,23,10,56,45,222,894572,15,23]
-        const ranges3 = trieSearchNumbers(someNumbers,[15, 23]);
-        console.log(ranges3);
-        ranges3.forEach(range => console.log(someNumbers.slice(range.start, range.end)));
+	const onStringSearch = () => {
+		searchForStrings = stringSearchFor.split('\n').filter(Boolean);
+		searchResults = trieSearchString(constitution, ...searchForStrings);
+		selectedSearchFor = searchForStrings.length > 0 ? searchForStrings[0] : undefined;
+	};
+
+	const onStringSearchClear = () => {
+		searchForStrings = [];
+		stringSearchResults = emptyStringSearchResults;
 	};
 </script>
 
-<div class="light-mode">
-	<Button on:click={onSearch}>Go</Button>
+<div class="root light-mode">
+	<TabList bind:selectedValue={selectedSearchType}>
+		<Tab value="trieSearchString">trieSearchString</Tab>
+		<Tab value="trieSearchArray">trieSearchArray</Tab>
+		<Tab value="trieSearch">trieSearch</Tab>
+	</TabList>
 
-    <TextArea autoHeight value={constitution} />
+	{#if selectedSearchType === 'trieSearchString'}
+		<p>
+			This demonstrates calling trieSearchString. Type one or more search phrases into the Search
+			For field, then click the Search button.
+		</p>
+		<code>trieSearchString(text: string, ...searchFor: string[]) : TrieSearchResult[]</code>
+		<Label text="Search for">
+			<TextArea bind:value={stringSearchFor} autoHeight />
+		</Label>
+		<div>
+			<Button on:click={onStringSearch}>Search</Button>
+			<Button on:click={onStringSearchClear}>Clear</Button>
+		</div>
+		<p>
+			The trie search finds all the search for phrases at once. Since found phrases might overlap,
+			select the phrase in the list to see the highlighted results. Switching between phrases in the
+			list does not re-run the search.
+		</p>
+		<div class="results">
+			<List bind:selectedValue={selectedSearchFor}>
+				{#each searchForStrings as searchForString, i}
+					<ListItem value={searchForString}>
+						<span>
+							<span class="search-term">{searchForString}</span>
+							<span
+								class="search-term-count"
+								style={`background-color: ${stringSearchForColors[i] || 'lightslategray'}`}
+								>
+								{searchResults.filter(
+									(sr) => sr.searchForIndex === searchForStrings.indexOf(searchForString)
+								).length}</span
+							>
+						</span>
+					</ListItem>
+				{/each}
+			</List>
+			<div class="long-text">
+				{#each stringSearchResults as result}
+					<span
+						class:matched={result.matched}
+						style={`background-color: ${
+							result.searchForIndex >= 0
+								? stringSearchForColors[result.searchForIndex] || 'lightslategray'
+								: 'white'
+						}`}>{result.value}</span
+					>
+				{/each}
+			</div>
+		</div>
+	{/if}
 </div>
+
+<style>
+	.root {
+		display: flex;
+		flex-direction: column;
+		row-gap: 1em;
+	}
+	.long-text {
+		max-height: 500px;
+		overflow-y: scroll;
+		scroll-behavior: smooth;
+		border: 1px solid gray;
+		padding: 0.5em;
+		font-family: sans-serif;
+	}
+
+	.matched {
+		background-color: lightslategray;
+		color: white;
+	}
+
+	.results {
+		display: grid;
+		grid-template-columns: auto 1fr;
+	}
+
+	.search-term-count {
+		color: white;
+		margin-right: 0.25em;
+		border-radius: 50%;
+		padding: 0.25em;
+	}
+
+	.search-term {
+		color: white;
+		margin-right: 0.25em;
+		border-radius: 1em;
+		padding: 0.25em;
+	}
+</style>

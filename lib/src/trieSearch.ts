@@ -6,8 +6,12 @@ export type TrieNode<T> = {
   endIds?: number[];
 };
 
-export type TrieSearchResult = Range & {
-  searchId: number;
+/**
+ * A range for a sequence found by trie search.
+ */
+export type TrieSearchFoundRange = Range & {
+  /** The index of the matching the searchFor parameter passed to trieSearch. */
+  searchForIndex: number;
 };
 
 const validateChildNode = <T>(node: TrieNode<T>, key: T, isRootChild: boolean) => {
@@ -93,7 +97,7 @@ export const addToTrieNode = <T>(iterator: Iterator<T>, node: TrieNode<T>): numb
   while (!token.done) {
     currentNode.children = currentNode.children || new Map<T, TrieNode<T>>();
     if (currentNode.children.get(token.value) === undefined || currentNode.children.get(token.value) === null) {
-      const newNode : TrieNode<T> = {};
+      const newNode: TrieNode<T> = {};
       currentNode.children!.set(token.value, newNode);
       currentNode = newNode;
     } else {
@@ -119,60 +123,86 @@ export const addToTrieNode = <T>(iterator: Iterator<T>, node: TrieNode<T>): numb
   return searchId;
 };
 
-export const trieSearch = <T>(iterator: Iterator<T>, node: TrieNode<T>): TrieSearchResult[] => {
+type TrieSequence<T> = {
+  /**
+   * The current node in the sequence.
+   */
+  node: TrieNode<T>;
+  /**
+   * The start position of this sequence
+   */
+  start: number;
+};
+
+/**
+ * Trie search of a set of items for one or more sequences.
+ * @param iterator The items to search
+ * @param node The trie node representing the sequences to search for
+ * @returns A search result for each found sequence within items. Each result's searchForIndex corresponds to the order
+ * of searchFor parameters.
+ */
+export const trieSearch = <T>(iterator: Iterator<T>, node: TrieNode<T>): TrieSearchFoundRange[] => {
   validateNode(node);
 
-  const result: TrieSearchResult[] = [];
-  const inProgressNodes: TrieNode<T>[] = [];
-  const matchStarts: Record<number, number> = {};
+  const result: TrieSearchFoundRange[] = [];
+
+  // track the node we are on for each in progress sequence
+  const sequences: TrieSequence<T>[] = [];
 
   let i = 0;
   let item = iterator.next();
   while (!item.done) {
+    // check each in progress sequence to see if this item moves to the next node in the sequence
     let p = 0;
-    while (p < inProgressNodes.length) {
-      const progressNode = inProgressNodes[p].children!.get(item.value);
+    while (p < sequences.length) {
+      const progressNode = sequences[p].node.children!.get(item.value);
       if (progressNode !== undefined) {
+
+        // if this node has any end IDs, add results
         progressNode.endIds?.forEach((endId) => {
-          const start = matchStarts[endId];
-          const tokenRange = createRange<TrieSearchResult>({
-            searchId: endId,
-            start: start,
+          const tokenRange = createRange<TrieSearchFoundRange>({
+            searchForIndex: endId,
+            start: sequences[p].start,
             end: i + 1,
           });
           result.push(tokenRange);
         });
 
+        // if the in progress sequence continues, then move to this node
         if (progressNode.children && progressNode.children.size > 0) {
-          inProgressNodes[p] = progressNode as TrieNode<T>;
+          sequences[p].node = progressNode as TrieNode<T>;
           p++;
         } else {
-          inProgressNodes.splice(p, 1);
+          // otherwise, we're done with this node
+          sequences.splice(p, 1);
         }
       } else {
-        inProgressNodes.splice(p, 1);
+        // if the in progress sequence doesn't continue, then remove it.
+        sequences.splice(p, 1);
       }
     }
 
+    // check for the start of new sequences
     const firstChildNode = node.children?.get(item.value);
     if (firstChildNode) {
-      // only first children have start IDs
-      const startIds = firstChildNode.startIds as number[];
-      startIds.forEach((startId) => (matchStarts[startId] = i));
 
-      // a first child could be both an end and a start
+      // if this first child has any end IDs, add results
       firstChildNode.endIds?.forEach((endId) => {
-        const start = matchStarts[endId];
-        const tokenRange = createRange<TrieSearchResult>({
-          searchId: endId,
+        const start = i;
+        const tokenRange = createRange<TrieSearchFoundRange>({
+          searchForIndex: endId,
           start: start,
           end: i + 1,
         });
         result.push(tokenRange);
       });
 
+      // if the node continues, add in progress
       if (firstChildNode.children && firstChildNode.children.size > 0) {
-        inProgressNodes.push(firstChildNode);
+        sequences.push({
+          node: firstChildNode,
+          start: i,
+        });
       }
     }
 

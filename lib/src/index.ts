@@ -1,2 +1,3 @@
-export { createCharacterTokenizer, createWordTokenizer} from './tokenizer';
-export { trieSearch, trieSearchArray, trieSearchString, trieSearchNumbers} from './trieSearchApi';
+export type { TrieSearchFoundRange} from './trieSearch';
+export { trieSearch, trieSearchArray, trieSearchString} from './trieSearchApi';
+export { createWordIterator} from './wordIterator';

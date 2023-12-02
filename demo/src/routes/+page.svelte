@@ -1,17 +1,25 @@
 <script lang="ts">
 	import '@geoffcox/sterling-svelte/css/sterling.css';
-	import { Button, Label, List, ListItem, Tab, TabList, TextArea } from '@geoffcox/sterling-svelte';
+	import { Button, Checkbox, Label, Tab, TabList, TextArea } from '@geoffcox/sterling-svelte';
 	import { trieSearchString, type TrieSearchFoundRange } from 'trie-search';
 	import { constitution as rawConstitution } from '../constitution';
+	import { groupBy, orderBy, sortBy } from 'lodash-es';
+	import { onMount } from 'svelte';
 
-	type FormattedSearchResult = { value: string; matched: boolean; searchForIndex: number };
+	type FormattedSearchResult = {
+		value: string;
+		isMatch: boolean;
+		inRange: boolean;
+		searchForIndex: number;
+	};
 
 	const constitution = rawConstitution.replaceAll('\n', '');
 
 	const emptyStringSearchResults: FormattedSearchResult[] = [
 		{
 			value: constitution,
-			matched: false,
+			isMatch: false,
+			inRange: false,
 			searchForIndex: -1
 		}
 	];
@@ -31,13 +39,12 @@
 	let selectedSearchType = 'trieSearchString';
 
 	let stringSearchFor = 'We the People';
+	let caseInsensitive = false;
 	let searchForStrings: string[] = [];
 	let selectedSearchFor: string | undefined = undefined;
 	let searchResults: TrieSearchFoundRange[] = [];
 
-	$: selectedSearchForIndex = selectedSearchFor ? searchForStrings.indexOf(selectedSearchFor) : -1;
-
-	const formatSearchResults = (
+	const formatResults = (
 		text: string,
 		ranges: TrieSearchFoundRange[]
 	): FormattedSearchResult[] => {
@@ -45,54 +52,91 @@
 			return [
 				{
 					value: text,
-					matched: false,
+					isMatch: false,
+					inRange: false,
 					searchForIndex: -1
 				}
 			];
 		}
 
-		let i = 0;
-		const formattedResults: FormattedSearchResult[] = [];
-		ranges.forEach((result) => {
-			const before = text.slice(i, result.start);
-			if (before.length > 0) {
-				formattedResults.push({
-					value: before,
-					matched: false,
+		const byStart = groupBy(ranges, 'start');
+		const byEnd = groupBy(ranges, 'end');
+
+		let results: FormattedSearchResult[] = [];
+		let inRange: number[] = [];
+		let current: string = '';
+		for (let i = 0; i < text.length; i++) {
+			const starts = byStart[i];
+			const ends = byEnd[i];
+
+			if (!starts && !ends) {
+				current += text[i];
+				continue;
+			} else if (current.length > 0) {
+				results.push({
+					value: current,
+					isMatch: false,
+					inRange: inRange.length > 0,
 					searchForIndex: -1
 				});
+				current = '';
 			}
-			const matched = text.slice(result.start, result.end);
-			if (matched.length > 0) {
-				formattedResults.push({
-					value: matched,
-					matched: true,
-					searchForIndex: result.searchForIndex
+
+			if (starts) {
+				const sortedStarts = sortBy(starts, 'end');
+				sortedStarts.forEach((start) => {
+					results.push({
+						value: '[',
+						isMatch: true,
+						inRange: false,
+						searchForIndex: start.searchForIndex
+					});
+					inRange.push(start.searchForIndex);
 				});
 			}
-			i = result.end;
-		});
 
-		const after = text.slice(i);
-		if (after.length > 0) {
-			formattedResults.push({
-				value: after,
-				matched: false,
+			if (ends) {
+				const sortedEnds = orderBy(ends, ['start', 'desc']);
+				sortedEnds.forEach((end) => {
+					results.push({
+						value: ']',
+						isMatch: true,
+						inRange: false,
+						searchForIndex: end.searchForIndex
+					});
+					const leaveRange = inRange.lastIndexOf(end.searchForIndex);
+					if (leaveRange !== -1) {
+						inRange.splice(leaveRange, 1);
+					}
+				});
+			}
+
+			results.push({
+				value: text[i],
+				isMatch: false,
+				inRange: inRange.length > 0,
 				searchForIndex: -1
 			});
 		}
 
-		return formattedResults;
+		if (current.length > 0) {
+			results.push({
+				value: current,
+				isMatch: false,
+				inRange: inRange.length > 0,
+				searchForIndex: -1
+			});
+			current = '';
+		}
+
+		return results;
 	};
 
-	$: stringSearchResults = formatSearchResults(
-		constitution,
-		searchResults.filter((sr) => sr.searchForIndex === selectedSearchForIndex)
-	);
+	$: stringSearchResults = formatResults(constitution, searchResults);
 
 	const onStringSearch = () => {
 		searchForStrings = stringSearchFor.split('\n').filter(Boolean);
-		searchResults = trieSearchString(constitution, ...searchForStrings);
+		searchResults = trieSearchString(constitution, { caseInsensitive }, ...searchForStrings);
 		selectedSearchFor = searchForStrings.length > 0 ? searchForStrings[0] : undefined;
 	};
 
@@ -100,64 +144,66 @@
 		searchForStrings = [];
 		stringSearchResults = emptyStringSearchResults;
 	};
+
+	let mounted = false;
+
+	onMount(() => (mounted = true));
 </script>
 
 <div class="root light-mode">
-	<TabList bind:selectedValue={selectedSearchType}>
-		<Tab value="trieSearchString">trieSearchString</Tab>
-		<Tab value="trieSearchArray">trieSearchArray</Tab>
-		<Tab value="trieSearch">trieSearch</Tab>
-	</TabList>
+	{#if mounted}
+		<TabList bind:selectedValue={selectedSearchType}>
+			<Tab value="trieSearchString">trieSearchString</Tab>
+			<Tab value="trieSearchArray">trieSearchArray</Tab>
+			<Tab value="trieSearch">trieSearch</Tab>
+		</TabList>
 
-	{#if selectedSearchType === 'trieSearchString'}
-		<p>
-			This demonstrates calling trieSearchString. Type one or more search phrases into the Search
-			For field, then click the Search button.
-		</p>
-		<code>trieSearchString(text: string, ...searchFor: string[]) : TrieSearchResult[]</code>
-		<Label text="Search for">
-			<TextArea bind:value={stringSearchFor} autoHeight />
-		</Label>
-		<div>
-			<Button on:click={onStringSearch}>Search</Button>
-			<Button on:click={onStringSearchClear}>Clear</Button>
-		</div>
-		<p>
-			The trie search finds all the search for phrases at once. Since found phrases might overlap,
-			select the phrase in the list to see the highlighted results. Switching between phrases in the
-			list does not re-run the search.
-		</p>
-		<div class="results">
-			<List bind:selectedValue={selectedSearchFor}>
+		{#if selectedSearchType === 'trieSearchString'}
+			<p>
+				This demonstrates calling trieSearchString. Type one or more search phrases into the Search
+				For field, then click the Search button.
+			</p>
+			<code>trieSearchString(text: string, options: &lbrace; caseInsensitive?: boolean &rbrace; ...searchFor: string[]) : TrieSearchResult[]</code>
+			<Label text="Search for">
+				<TextArea bind:value={stringSearchFor} autoHeight />
+			</Label>
+			<div>
+				<Button on:click={onStringSearch}>Search</Button>
+				<Button on:click={onStringSearchClear}>Clear</Button>
+				<Checkbox bind:checked={caseInsensitive}>Case insensitive</Checkbox>
+			</div>
+			<div>
 				{#each searchForStrings as searchForString, i}
-					<ListItem value={searchForString}>
-						<span>
-							<span class="search-term">{searchForString}</span>
-							<span
-								class="search-term-count"
-								style={`background-color: ${stringSearchForColors[i] || 'lightslategray'}`}
-								>
-								{searchResults.filter(
-									(sr) => sr.searchForIndex === searchForStrings.indexOf(searchForString)
-								).length}</span
-							>
-						</span>
-					</ListItem>
-				{/each}
-			</List>
-			<div class="long-text">
-				{#each stringSearchResults as result}
-					<span
-						class:matched={result.matched}
-						style={`background-color: ${
-							result.searchForIndex >= 0
-								? stringSearchForColors[result.searchForIndex] || 'lightslategray'
-								: 'white'
-						}`}>{result.value}</span
-					>
+					<span>
+						<span class="search-term">{searchForString}</span>
+						<span
+							class="search-term-count"
+							style={`--search-for-color: ${
+								stringSearchForColors[i] || 'lightslategray'
+							}`}
+						>
+							{searchResults.filter(
+								(sr) => sr.searchForIndex === searchForStrings.indexOf(searchForString)
+							).length}</span
+						>
+					</span>
 				{/each}
 			</div>
-		</div>
+			<div class="results">
+				<div class="long-text">
+					{#each stringSearchResults as result}
+						<span
+							class="result"
+							class:match={result.isMatch}
+							class:in-range={result.inRange}
+							style={`--search-for-color: ${
+								stringSearchForColors[result.searchForIndex] || 'lightslategray'
+							}`}>{result.value}</span
+						>
+					{/each}
+				</div>
+			</div>
+		{/if}
 	{/if}
 </div>
 
@@ -176,25 +222,33 @@
 		font-family: sans-serif;
 	}
 
-	.matched {
+	.results {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		line-height: 1.6em;
+	}
+
+	.result.match {
+		background-color: var(--search-for-color);
+		color: white;
+		padding: 0 0.25em;
+		display: inline-block;
+	}
+
+	.result.in-range {
 		background-color: lightslategray;
 		color: white;
 	}
 
-	.results {
-		display: grid;
-		grid-template-columns: auto 1fr;
-	}
-
 	.search-term-count {
 		color: white;
+		background-color: var(--search-for-color);
 		margin-right: 0.25em;
 		border-radius: 50%;
 		padding: 0.25em;
 	}
 
 	.search-term {
-		color: white;
 		margin-right: 0.25em;
 		border-radius: 1em;
 		padding: 0.25em;

@@ -5,6 +5,7 @@
 	import { constitution as rawConstitution } from '../constitution';
 	import { groupBy, orderBy, sortBy } from 'lodash-es';
 	import { onMount } from 'svelte';
+	import TrieSearchStringPanel from './TrieSearchStringPanel.svelte';
 
 	type FormattedSearchResult = {
 		value: string;
@@ -159,6 +160,8 @@
 		</TabList>
 
 		{#if selectedSearchType === 'trieSearchString'}
+			<TrieSearchStringPanel />
+		{:else if selectedSearchType === 'trieSearchArray'}
 			<p>
 				This demonstrates calling trieSearchString. Type one or more search phrases into the Search
 				For field, then click the Search button.

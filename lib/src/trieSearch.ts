@@ -1,9 +1,17 @@
 import { type Range, createRange } from "./range";
 
+/**
+ * A node representing one or more sequences to search for in a trie search.
+ */
 export type TrieNode<T> = {
+  /** The nodes following in the sequence */
   children?: Map<T, TrieNode<T>>;
-  startIds?: number[];
-  endIds?: number[];
+
+  /** The index of the searchFor parameter for this sequence. */
+  searchIndices?: number[];
+
+  /** The index of the searchFor parameter when this node ends the sequence. */
+  endSearchIndices?: number[];
 };
 
 /**
@@ -11,25 +19,19 @@ export type TrieNode<T> = {
  */
 export type TrieSearchFoundRange = Range & {
   /** The index of the matching the searchFor parameter passed to trieSearch. */
-  searchForIndex: number;
+  searchIndex: number;
 };
 
-const validateChildNode = <T>(node: TrieNode<T>, key: T, isRootChild: boolean) => {
-  const hasStartIds = node.startIds && node.startIds.length > 0;
+const validateChildNode = <T>(node: TrieNode<T>, key: T) => {
 
-  // First children must have a start ID
-  if (isRootChild) {
-    if (!hasStartIds) {
-      throw new Error(`The ${key} node is missing a start ID.`);
-    }
-  } else if (hasStartIds) {
-    // No other children can have a start ID
-    throw new Error(`The ${key} node is an intermediate or end node but has a start ID.`);
+  // every node must be part of a search
+  if (!node.searchIndices || node.searchIndices.length === 0) {
+    throw new Error(`The ${key} node is missing search indices.`);
   }
 
-  // Any child without children must end a phrase
+  // Any child without children must end a sequence
   if (!node.children || node.children.size === 0) {
-    if (!node.endIds || node.endIds.length === 0) {
+    if (!node.endSearchIndices || node.endSearchIndices.length === 0) {
       throw new Error(`The ${key} node is missing an end ID and has no children.`);
     }
   } else {
@@ -41,7 +43,7 @@ const validateChildNode = <T>(node: TrieNode<T>, key: T, isRootChild: boolean) =
       if (!child) {
         throw new Error(`The ${key.value} node is not defined.`);
       }
-      validateChildNode(child, key.value, false);
+      validateChildNode(child, key.value);
       key = keyIterator.next();
     }
   }
@@ -52,11 +54,11 @@ const validateNode = <T>(node: TrieNode<T>) => {
     throw new Error("The node parameter is not defined.");
   }
 
-  if (node.startIds && node.startIds.length > 0) {
-    throw new Error("The root node has start IDs. Direct children of the root node should start phrases.");
+  if (node.searchIndices && node.searchIndices.length > 0) {
+    throw new Error("The root node has search IDs. Direct children of the root node should have search IDs.");
   }
 
-  if (node.endIds && node.endIds.length > 0) {
+  if (node.endSearchIndices && node.endSearchIndices.length > 0) {
     throw new Error("The root node has end IDs. Descendants of the root node should end phrases.");
   }
 
@@ -70,12 +72,18 @@ const validateNode = <T>(node: TrieNode<T>) => {
       if (!child) {
         throw new Error(`The ${key.value} node is not defined.`);
       }
-      validateChildNode(child, key.value, true);
+      validateChildNode(child, key.value);
       key = keyIterator.next();
     }
   }
 };
 
+/**
+ * Add a search sequence to a trie node.
+ * @param iterator The iterator of the search sequence to add.
+ * @param node The target node for adding the sequence.
+ * @returns The search index for the added sequence.
+ */
 export const addToTrieNode = <T>(iterator: Iterator<T>, node: TrieNode<T>): number => {
   validateNode(node);
 
@@ -86,12 +94,10 @@ export const addToTrieNode = <T>(iterator: Iterator<T>, node: TrieNode<T>): numb
   // I give each sequence an incremental ID
   const nodeChildrenValues = [...node.children.values()];
   const searchId = nodeChildrenValues.reduce<number>((sum, current) => {
-    return sum + (current?.startIds?.length || 0);
+    return sum + (current?.searchIndices?.length || 0);
   }, 0);
 
   let currentNode = node;
-
-  let i = 0;
   let token = iterator.next();
 
   while (!token.done) {
@@ -104,19 +110,15 @@ export const addToTrieNode = <T>(iterator: Iterator<T>, node: TrieNode<T>): numb
       currentNode = currentNode.children.get(token.value)!;
     }
 
-    // Mark the first token as the start of the sequence
-    if (i === 0) {
-      currentNode.startIds = currentNode.startIds || [];
-      currentNode.startIds.push(searchId);
-    }
+    currentNode.searchIndices = currentNode.searchIndices || [];
+    currentNode.searchIndices.push(searchId);
 
     token = iterator.next();
-    i++;
 
     // Mark the last token as the end of the sequence
     if (token.done) {
-      currentNode.endIds = currentNode.endIds || [];
-      currentNode.endIds.push(searchId);
+      currentNode.endSearchIndices = currentNode.endSearchIndices || [];
+      currentNode.endSearchIndices.push(searchId);
     }
   }
 
@@ -129,17 +131,16 @@ type TrieSequence<T> = {
    */
   node: TrieNode<T>;
   /**
-   * The start position of this sequence
+   * The start position of this sequence.
    */
   start: number;
 };
 
 /**
- * Trie search of a set of items for one or more sequences.
- * @param iterator The items to search
- * @param node The trie node representing the sequences to search for
- * @returns A search result for each found sequence within items. Each result's searchForIndex corresponds to the order
- * of searchFor parameters.
+ * Trie search of a sequences of items using a trie search node.
+ * @param iterator The items to search.
+ * @param node The trie node representing the search for sequences.
+ * @returns The ranges found by searching.
  */
 export const trieSearch = <T>(iterator: Iterator<T>, node: TrieNode<T>): TrieSearchFoundRange[] => {
   validateNode(node);
@@ -159,9 +160,9 @@ export const trieSearch = <T>(iterator: Iterator<T>, node: TrieNode<T>): TrieSea
       if (progressNode !== undefined) {
 
         // if this node has any end IDs, add results
-        progressNode.endIds?.forEach((endId) => {
+        progressNode.endSearchIndices?.forEach((endId) => {
           const tokenRange = createRange<TrieSearchFoundRange>({
-            searchForIndex: endId,
+            searchIndex: endId,
             start: sequences[p].start,
             end: i + 1,
           });
@@ -187,10 +188,10 @@ export const trieSearch = <T>(iterator: Iterator<T>, node: TrieNode<T>): TrieSea
     if (firstChildNode) {
 
       // if this first child has any end IDs, add results
-      firstChildNode.endIds?.forEach((endId) => {
+      firstChildNode.endSearchIndices?.forEach((endId) => {
         const start = i;
         const tokenRange = createRange<TrieSearchFoundRange>({
-          searchForIndex: endId,
+          searchIndex: endId,
           start: start,
           end: i + 1,
         });

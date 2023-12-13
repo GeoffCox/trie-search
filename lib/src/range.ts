@@ -125,7 +125,7 @@ export const createRange = <T extends Range>(range: Partial<T>): T => {
 /**
  * Returns true if the range start, end, and length are valid; false otherwise.
  */
-export const isRangeValue = <T extends Range>(range: T): boolean => {
+export const isRangeValid = <T extends Range>(range: T): boolean => {
   if (range === undefined) {
     return false;
   }
@@ -145,7 +145,7 @@ export const isRangeValue = <T extends Range>(range: T): boolean => {
 };
 
 /**
- * Validates the range is valid and throws errors if not.
+ * Validates the range is valid. Throws errors if range is invalid.
  */
 export const validateRange = <T extends Range>(range: T) => {
   if (range === undefined) {

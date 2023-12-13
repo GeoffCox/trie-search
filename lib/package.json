@@ -5,15 +5,17 @@
   "description": "A trie search algorithm in Typscript.",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/GeoffCox/binary-search/issues"
+    "url": "https://github.com/GeoffCox/trie-search/issues"
   },
-  "homepage": "https://github.com/GeoffCox/binary-search/blob/main/lib/README.md",
+  "homepage": "https://github.com/GeoffCox/trie-search/blob/main/lib/README.md",
   "keywords": [
     "algorithm",
     "search",
     "trie",
     "trie search",
     "text search",
+    "string search",
+    "find all",
     "typescript",
     "javascript"
   ],

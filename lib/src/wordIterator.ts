@@ -1,3 +1,5 @@
+import { Range, createRange } from "./range";
+
 const whitespaceChars = [" ", "\t", "\n", "\r"];
 
 const delimiterChars = [
@@ -65,11 +67,12 @@ export type WordIteratorOptions = {
  */
 export const createWordIterator = (value: string, options?: WordIteratorOptions): Iterator<string> => {
   let i = 0;
-  const next = () => {
-    const skipDelimiters = options && options.excludeDelimiters;
-    const skipWhitespace = !options || !options.includeWhitespace;
-    const charsToSkip = [...(skipDelimiters ? delimiterChars : []), ...(skipWhitespace ? whitespaceChars : [])];
 
+  const skipDelimiters = options && options.excludeDelimiters;
+  const skipWhitespace = !options || !options.includeWhitespace;
+  const charsToSkip = [...(skipDelimiters ? delimiterChars : []), ...(skipWhitespace ? whitespaceChars : [])];
+
+  const next = () => {
     while (i < value.length && charsToSkip.includes(value[i])) {
       i++;
     }
@@ -79,25 +82,55 @@ export const createWordIterator = (value: string, options?: WordIteratorOptions)
     }
 
     let start = i;
-    let current = i;
+    let end = i;
 
     while (
-      current < value.length &&
-      !whitespaceChars.includes(value[current]) &&
-      !delimiterChars.includes(value[current])
+      end < value.length &&
+      !whitespaceChars.includes(value[end]) &&
+      !delimiterChars.includes(value[end])
     ) {
-      current++;
+      end++;
     }
 
-    current = current === start ? current + 1 : current;
+    end = end === start ? end + 1 : end;
 
     const nextPart =
-      options?.caseInsensitive === true ? value.slice(start, current).toLowerCase() : value.slice(start, current);
-    i = current;
+      options?.caseInsensitive === true ? value.slice(start, end).toLowerCase() : value.slice(start, end);
+    i = end;
     return { value: nextPart, done: false };
   };
 
   return {
     next,
   };
+};
+
+export const createWordIteratorRanges = (value: string, options?: WordIteratorOptions): Range[] => {
+  const result: Range[] = [];
+
+  const skipDelimiters = options && options.excludeDelimiters;
+  const skipWhitespace = !options || !options.includeWhitespace;
+  const charsToSkip = [...(skipDelimiters ? delimiterChars : []), ...(skipWhitespace ? whitespaceChars : [])];
+
+  let i = 0;
+  while (i < value.length) {
+    
+    while (i < value.length && charsToSkip.includes(value[i])) {
+      i++;
+    }
+
+    let start = i;
+    let end = i;
+
+    while (end < value.length && !whitespaceChars.includes(value[end]) && !delimiterChars.includes(value[end])) {
+      end++;
+    }
+
+    end = end === start ? end + 1 : end;
+
+    result.push(createRange({ start: i, end: end }));
+    i = end;
+  }
+
+  return result;
 };

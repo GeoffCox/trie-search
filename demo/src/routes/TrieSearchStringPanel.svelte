@@ -6,10 +6,15 @@
 		type TrieSearchFoundRange,
 		type TrieNode,
 		addToTrieNode,
-		trieSearchWords
+		trieSearchWords,
+		createWordIterator,
+		createCharacterIterator,
+		createWordIteratorRanges,
+		createRange
 	} from 'trie-search';
 	import { constitution as rawConstitution } from '../constitution';
 	import SearchBadge from './SearchBadge.svelte';
+	import TrieTree from './TrieTree.svelte';
 
 	// ----- Types ----- //
 
@@ -132,6 +137,25 @@
 		return results;
 	};
 
+	const formatWordResults = (
+		text: string,
+		ranges: TrieSearchFoundRange[]
+	): FormattedSearchResult[] => {
+		const rangeMap = createWordIteratorRanges(text);
+		const wordRanges: TrieSearchFoundRange[] = ranges.map((r) => {
+			const newRange = createRange({
+				start: rangeMap[r.start].start,
+				end: r.start === r.end ? rangeMap[r.end].end : rangeMap[r.end - 1].end
+			});
+			return {
+				...r,
+				...newRange
+			};
+		});
+
+		return formatResults(text, wordRanges);
+	};
+
 	// ----- Props ----- //
 
 	let searchText1 = '';
@@ -141,27 +165,31 @@
 	let searchText5 = '';
 
 	let caseInsensitive = false;
-	let words = false;
+	let wordByWord = false;
+
 	let searchResults: TrieSearchFoundRange[] = [];
 
 	$: searchFor = [searchText1, searchText2, searchText3, searchText4, searchText5].filter(Boolean);
-	$: stringSearchResults = formatResults(constitution, searchResults);
+	$: stringSearchResults = wordByWord
+		? formatWordResults(constitution, searchResults)
+		: formatResults(constitution, searchResults);
 
 	$: resultCounts = countBy(searchResults, 'searchForIndex');
-
-	$: console.log(resultCounts);
 
 	let searchNode: TrieNode<string> = {};
 
 	const createSearchNode = (searchFor: string[]) => {
 		searchNode = {};
-		searchFor.forEach((sf) => addToTrieNode(sf[Symbol.iterator](), searchNode));
+		searchFor.forEach((sf) => {
+			const iterator = wordByWord ? createWordIterator(sf) : createCharacterIterator(sf);
+			addToTrieNode(iterator, searchNode);
+		});
 	};
 
 	$: createSearchNode(searchFor);
 
 	const onStringSearch = () => {
-		if (words) {
+		if (wordByWord) {
 			searchResults = trieSearchWords(constitution, { caseInsensitive }, ...searchFor);
 		} else {
 			searchResults = trieSearchString(constitution, { caseInsensitive }, ...searchFor);
@@ -196,9 +224,11 @@
 			<Button on:click={onStringSearch}>Search</Button>
 			<Button on:click={onStringSearchClear}>Clear</Button>
 			<Switch onText="Case insensitive" bind:checked={caseInsensitive} variant="colorful" />
-			<Switch onText="Word-by-word" bind:checked={words} variant="colorful" />
+			<Switch onText="Word-by-word" bind:checked={wordByWord} variant="colorful" />
 		</div>
-		<div></div>
+		<div>
+			<TrieTree node={searchNode} />
+		</div>
 	</div>
 
 	<div class="results">

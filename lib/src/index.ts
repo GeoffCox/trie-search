@@ -9,4 +9,4 @@ export { createTrieDisplayTree } from "./createTrieDisplayTree";
 export { createRange, isRangeValid, rangeContains, rangesEqual, rangesOverlap, rangeToString } from "./range";
 export { addToTrieNode, trieSearch } from "./trieSearch";
 export { trieSearchSequence, trieSearchArray, trieSearchString, trieSearchWords } from "./trieSearchApi";
-export { createWordIterator } from "./wordIterator";
+export { createWordIterator, createWordIteratorRanges } from "./wordIterator";

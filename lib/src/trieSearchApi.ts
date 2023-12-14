@@ -95,8 +95,6 @@ export const trieSearchWords = (
     addToTrieNode(createWordIterator(sf, options), node);
   });
 
-  console.log(node);
-
   return trieSearch(textIterator, node);
 };
 

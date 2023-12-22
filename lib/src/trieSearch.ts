@@ -22,8 +22,21 @@ export type TrieSearchFoundRange = Range & {
   searchIndex: number;
 };
 
-const validateChildNode = <T>(node: TrieNode<T>, key: T) => {
+/**
+ * Options for controlling a trie search.
+ */
+export type TrieSearchOptions = {
+  /** Called as each range is found during a trie search.
+   *  @returns How the found range should be processed:
+   * - 'cancel' will not add the range to the results and ends the search.
+   * - 'done' to add the range to the results and ends the search.
+   * - 'discard' will not add the range to the results and keep searching.
+   * - 'save' will add the range to the results and keep searching.
+   */
+  onFound?: (range: TrieSearchFoundRange) => "save" | "discard" | "cancel" | "done";
+};
 
+const validateChildNode = <T>(node: TrieNode<T>, key: T) => {
   // every node must be part of a search
   if (!node.searchIndices || node.searchIndices.length === 0) {
     throw new Error(`The ${key} node is missing search indices.`);
@@ -98,25 +111,25 @@ export const addToTrieNode = <T>(iterator: Iterator<T>, node: TrieNode<T>): numb
   }, 0);
 
   let currentNode = node;
-  let token = iterator.next();
+  let item = iterator.next();
 
-  while (!token.done) {
+  while (!item.done) {
     currentNode.children = currentNode.children || new Map<T, TrieNode<T>>();
-    if (currentNode.children.get(token.value) === undefined || currentNode.children.get(token.value) === null) {
+    if (currentNode.children.get(item.value) === undefined || currentNode.children.get(item.value) === null) {
       const newNode: TrieNode<T> = {};
-      currentNode.children!.set(token.value, newNode);
+      currentNode.children!.set(item.value, newNode);
       currentNode = newNode;
     } else {
-      currentNode = currentNode.children.get(token.value)!;
+      currentNode = currentNode.children.get(item.value)!;
     }
 
     currentNode.searchIndices = currentNode.searchIndices || [];
     currentNode.searchIndices.push(searchId);
 
-    token = iterator.next();
+    item = iterator.next();
 
     // Mark the last token as the end of the sequence
-    if (token.done) {
+    if (item.done) {
       currentNode.endSearchIndices = currentNode.endSearchIndices || [];
       currentNode.endSearchIndices.push(searchId);
     }
@@ -139,10 +152,15 @@ type TrieSequence<T> = {
 /**
  * Trie search of a sequences of items using a trie search node.
  * @param iterator The items to search.
+ * @param options Options to control the search.
  * @param node The trie node representing the search for sequences.
  * @returns The ranges found by searching.
  */
-export const trieSearch = <T>(iterator: Iterator<T>, node: TrieNode<T>): TrieSearchFoundRange[] => {
+export const trieSearch = <T>(
+  iterator: Iterator<T>,
+  options: TrieSearchOptions,
+  node: TrieNode<T>
+): TrieSearchFoundRange[] => {
   validateNode(node);
 
   const result: TrieSearchFoundRange[] = [];
@@ -158,16 +176,25 @@ export const trieSearch = <T>(iterator: Iterator<T>, node: TrieNode<T>): TrieSea
     while (p < sequences.length) {
       const progressNode = sequences[p].node.children!.get(item.value);
       if (progressNode !== undefined) {
-
         // if this node has any end IDs, add results
-        progressNode.endSearchIndices?.forEach((endId) => {
-          const tokenRange = createRange<TrieSearchFoundRange>({
-            searchIndex: endId,
-            start: sequences[p].start,
-            end: i + 1,
-          });
-          result.push(tokenRange);
-        });
+        if (progressNode.endSearchIndices) {
+          for (let j = 0; j < progressNode.endSearchIndices?.length; j++) {
+            const endId = progressNode.endSearchIndices[j];
+            const foundRange = createRange<TrieSearchFoundRange>({
+              searchIndex: endId,
+              start: sequences[p].start,
+              end: i + 1,
+            });
+
+            const onFoundAction = options.onFound?.(foundRange) || "save";
+            if (onFoundAction === "save" || onFoundAction === "done") {
+              result.push(foundRange);
+            }
+            if (onFoundAction === "cancel" || onFoundAction === "done") {
+              return result;
+            }
+          }
+        }
 
         // if the in progress sequence continues, then move to this node
         if (progressNode.children && progressNode.children.size > 0) {
@@ -186,17 +213,26 @@ export const trieSearch = <T>(iterator: Iterator<T>, node: TrieNode<T>): TrieSea
     // check for the start of new sequences
     const firstChildNode = node.children?.get(item.value);
     if (firstChildNode) {
-
       // if this first child has any end IDs, add results
-      firstChildNode.endSearchIndices?.forEach((endId) => {
-        const start = i;
-        const tokenRange = createRange<TrieSearchFoundRange>({
-          searchIndex: endId,
-          start: start,
-          end: i + 1,
-        });
-        result.push(tokenRange);
-      });
+      if (firstChildNode.endSearchIndices) {
+        for (let j = 0; j < firstChildNode.endSearchIndices?.length; j++) {
+          const endId = firstChildNode.endSearchIndices[j];
+          const start = i;
+          const foundRange = createRange<TrieSearchFoundRange>({
+            searchIndex: endId,
+            start: start,
+            end: i + 1,
+          });
+
+          const onFoundAction = options.onFound?.(foundRange) || "save";
+          if (onFoundAction === "save" || onFoundAction === "done") {
+            result.push(foundRange);
+          }
+          if (onFoundAction === "cancel" || onFoundAction === "done") {
+            return result;
+          }
+        }
+      }
 
       // if the node continues, add in progress
       if (firstChildNode.children && firstChildNode.children.size > 0) {

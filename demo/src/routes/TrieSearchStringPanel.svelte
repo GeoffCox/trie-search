@@ -12,14 +12,8 @@
 	} from 'trie-search';
 	import { constitution } from '../constitution';
 	import SearchBadge from './SearchBadge.svelte';
-	import TrieTree from './TrieTree2.svelte';
+	import TrieTree from './TrieTree.svelte';
 	import SearchResults from './SearchResults.svelte';
-
-	// ----- Constants ----- //
-
-	//const constitution = rawConstitution.replaceAll('\n', '');
-
-	// ----- Helpers ----- //
 
 	// ----- Props ----- //
 
@@ -39,6 +33,12 @@
 	let wordByWord = false;
 	let selectedTab = 'results';
 
+	$: {
+		searchText1, searchText2, searchText3, searchText4, searchText5;
+		searchActive = false;
+		resultCounts = {};
+	}
+
 	const runSearch = () => {
 		const searchFor = [searchText1, searchText2, searchText3, searchText4, searchText5].filter(
 			Boolean
@@ -53,13 +53,17 @@
 		if (wordByWord) {
 			searchResults = trieSearchWords(
 				constitution,
-				{ caseInsensitive: !caseSensitive },
+				{
+					caseInsensitive: !caseSensitive
+				},
 				...searchFor
 			);
 		} else {
 			searchResults = trieSearchString(
 				constitution,
-				{ caseInsensitive: !caseSensitive },
+				{
+					caseInsensitive: !caseSensitive
+				},
 				...searchFor
 			);
 		}
@@ -127,13 +131,15 @@
 			<Tab value="searchTree">Search Tree</Tab>
 		</TabList>
 	</div>
-	<div class="search-results">
-		{#if selectedTab === 'results'}
+	{#if selectedTab === 'results'}
+		<div class="search-results">
 			<SearchResults text={constitution} results={searchResults} wordByWord={resultWordByWord} />
-		{:else if selectedTab === 'searchTree'}
+		</div>
+	{:else if selectedTab === 'searchTree'}
+		<div class="search-tree">
 			<TrieTree node={searchNode} />
-		{/if}
-	</div>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -198,6 +204,18 @@
 		overscroll-behavior: contain;
 	}
 
+	.search-tree {
+		display: grid;
+		justify-content: center;
+		grid-area: results;
+		border: 1px solid gray;
+		padding: 1em;
+		max-height: 500px;
+		overflow: hidden;
+		overflow-y: scroll;
+		overscroll-behavior: contain;
+	}
+
 	@media only screen and (max-width: 900px) {
 		.root {
 			grid-template-columns: auto;
@@ -210,7 +228,7 @@
 			justify-self: center;
 		}
 
-		.search-results {
+		.search-results, .search-tree {
 			overflow-y: hidden;
 			max-height: unset;
 			max-width: unset;

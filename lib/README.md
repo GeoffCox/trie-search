@@ -22,7 +22,7 @@ Read more about Trie here: https://en.wikipedia.org/wiki/Trie
 
 - The package includes convenience methods for searching strings and arrays of items to avoid callers needing to instantiate iterators for common scenarios.
 
-- Iterator factory functions are provided for characters and words including case-sensitive and case-insensitive search.
+- Iterator factory functions are provided for characters and words including case-sensitive/insensitive search.
 
 ## Demo
 
@@ -85,7 +85,7 @@ This method trie searches an array item-by-item. The items should have value com
 ```ts
 const someNumbers = [300, 45, 231, 11, 934, 20, 231, 982, 11, 3459, 18, 234, 231, 11];
 
-const results = trieSearchArray(someNumbers, 231, 11);
+const results = trieSearchArray(someNumbers, {}, 231, 11);
 
 // expect to find 231,11 at [2,4)(2) and [12,14)(2)
 results.forEach((result) => {
@@ -112,7 +112,7 @@ const searchIterators = [
   createCharacterIterator("there's no place like home", options),
 ];
 
-const results = trieSearchSequence(bookIterator, ...searchIterators);
+const results = trieSearchSequence(bookIterator, {}, ...searchIterators);
 
 results.forEach((result) => {
   console.log(
@@ -138,7 +138,48 @@ addToTrieNode(createCharacterIterator("good witch", options), node);
 addToTrieNode(createCharacterIterator("yellow brick road", options), node);
 addToTrieNode(createCharacterIterator("there's no place like home", options), node);
 
-const results = trieSearch(bookIterator, node);
+const results = trieSearch(bookIterator, {}, node);
+
+results.forEach((result) => {
+  console.log(
+    `Found ${wizardOfOz.substring(result.start, result.end)} at [${result.start},${result.end})(${result.length})`
+  );
+});
+```
+
+## TrieSearchOptions - onFound
+
+The onFound callback allows you to monitor and end the search early.
+
+```ts
+const wizardOfOz = fs.readFileSync("./the-wizard-of-oz");
+
+const options = { caseInsensitive: true };
+
+const bookIterator = createCharacterIterator(wizardOfOz, options);
+
+const node: TrieNode<string> = {};
+addToTrieNode(createCharacterIterator("good witch", options), node);
+addToTrieNode(createCharacterIterator("yellow brick road", options), node);
+addToTrieNode(createCharacterIterator("there's no place like home", options), node);
+
+let homeCount = 0;
+const searchOptions: TrieSearchOptions = {
+  onFound: (found: TrieSearchFoundRange) => {
+    if (found.searchIndex === 1) {
+      return "discard";
+    }
+    if (found.searchIndex === 2) {
+      if (homeCount >= 3) {
+        return "done";
+      }
+      homeCount++;
+    }
+    return "save";
+  },
+};
+
+const results = trieSearch(bookIterator, {}, node);
 
 results.forEach((result) => {
   console.log(
@@ -173,5 +214,5 @@ The `TrieNode<T>` the `children` property is a `Map<T, TrieNode<T>`. This allows
 in addition to their parent storing it as a lookup key. However, a `Map` isn't very easy to iterate and this makes
 displaying a trie node tree difficult.
 
-The `createTrieDisplayTree` converts a trie node tree structure to one easier to navigate and display. The `children` is 
+The `createTrieDisplayTree` converts a trie node tree structure to one easier to navigate and display. The `children` is
 a `TrieDisplayNode<T>[]` and each node has a `value`.

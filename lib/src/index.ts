@@ -1,5 +1,5 @@
 export type { Range } from "./range";
-export type { TrieSearchFoundRange, TrieNode } from "./trieSearch";
+export type { TrieNode, TrieSearchFoundRange, TrieSearchOptions } from "./trieSearch";
 export type { CharacterIteratorOptions } from "./characterIterator";
 export type { WordIteratorOptions } from "./wordIterator";
 export type { TrieDisplayNode } from "./createTrieDisplayTree";

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { countBy, groupBy, orderBy, sortBy } from 'lodash-es';
-	import { Button, Input, Switch } from '@geoffcox/sterling-svelte';
+	import { countBy } from 'lodash-es';
+	import { Button, Input, Label, Switch, Tab, TabList } from '@geoffcox/sterling-svelte';
 	import {
 		trieSearchString,
 		type TrieSearchFoundRange,
@@ -8,153 +8,18 @@
 		addToTrieNode,
 		trieSearchWords,
 		createWordIterator,
-		createCharacterIterator,
-		createWordIteratorRanges,
-		createRange
+		createCharacterIterator
 	} from 'trie-search';
-	import { constitution as rawConstitution } from '../constitution';
+	import { constitution } from '../constitution';
 	import SearchBadge from './SearchBadge.svelte';
-	import TrieTree from './TrieTree.svelte';
-
-	// ----- Types ----- //
-
-	type FormattedSearchResult = {
-		value: string;
-		isMatch: boolean;
-		inRange: boolean;
-		searchForIndex: number;
-	};
+	import TrieTree from './TrieTree2.svelte';
+	import SearchResults from './SearchResults.svelte';
 
 	// ----- Constants ----- //
 
-	const constitution = rawConstitution.replaceAll('\n', '');
-
-	const stringSearchForColors = [
-		'steelblue',
-		'seagreen',
-		'darksalmon',
-		'darkgoldenrod',
-		'mediumpurple',
-		'indianred',
-		'thistle',
-		'palegoldenrod',
-		'silver'
-	];
-
-	const emptyStringSearchResults: FormattedSearchResult[] = [
-		{
-			value: constitution,
-			isMatch: false,
-			inRange: false,
-			searchForIndex: -1
-		}
-	];
+	//const constitution = rawConstitution.replaceAll('\n', '');
 
 	// ----- Helpers ----- //
-
-	const formatResults = (text: string, ranges: TrieSearchFoundRange[]): FormattedSearchResult[] => {
-		if (ranges.length === 0) {
-			return [
-				{
-					value: text,
-					isMatch: false,
-					inRange: false,
-					searchForIndex: -1
-				}
-			];
-		}
-
-		const byStart = groupBy(ranges, 'start');
-		const byEnd = groupBy(ranges, 'end');
-
-		let results: FormattedSearchResult[] = [];
-		let inRange: number[] = [];
-		let current: string = '';
-		for (let i = 0; i < text.length; i++) {
-			const starts = byStart[i];
-			const ends = byEnd[i];
-
-			if (!starts && !ends) {
-				current += text[i];
-				continue;
-			} else if (current.length > 0) {
-				results.push({
-					value: current,
-					isMatch: false,
-					inRange: inRange.length > 0,
-					searchForIndex: -1
-				});
-				current = '';
-			}
-
-			if (starts) {
-				const sortedStarts = sortBy(starts, 'end');
-				sortedStarts.forEach((start) => {
-					results.push({
-						value: '[',
-						isMatch: true,
-						inRange: false,
-						searchForIndex: start.searchIndex
-					});
-					inRange.push(start.searchIndex);
-				});
-			}
-
-			if (ends) {
-				const sortedEnds = orderBy(ends, ['start', 'desc']);
-				sortedEnds.forEach((end) => {
-					results.push({
-						value: ']',
-						isMatch: true,
-						inRange: false,
-						searchForIndex: end.searchIndex
-					});
-					const leaveRange = inRange.lastIndexOf(end.searchIndex);
-					if (leaveRange !== -1) {
-						inRange.splice(leaveRange, 1);
-					}
-				});
-			}
-
-			results.push({
-				value: text[i],
-				isMatch: false,
-				inRange: inRange.length > 0,
-				searchForIndex: -1
-			});
-		}
-
-		if (current.length > 0) {
-			results.push({
-				value: current,
-				isMatch: false,
-				inRange: inRange.length > 0,
-				searchForIndex: -1
-			});
-			current = '';
-		}
-
-		return results;
-	};
-
-	const formatWordResults = (
-		text: string,
-		ranges: TrieSearchFoundRange[]
-	): FormattedSearchResult[] => {
-		const rangeMap = createWordIteratorRanges(text);
-		const wordRanges: TrieSearchFoundRange[] = ranges.map((r) => {
-			const newRange = createRange({
-				start: rangeMap[r.start].start,
-				end: r.start === r.end ? rangeMap[r.end].end : rangeMap[r.end - 1].end
-			});
-			return {
-				...r,
-				...newRange
-			};
-		});
-
-		return formatResults(text, wordRanges);
-	};
 
 	// ----- Props ----- //
 
@@ -164,107 +29,127 @@
 	let searchText4 = '';
 	let searchText5 = '';
 
-	let caseInsensitive = false;
-	let wordByWord = false;
-
-	let searchResults: TrieSearchFoundRange[] = [];
-
-	$: searchFor = [searchText1, searchText2, searchText3, searchText4, searchText5].filter(Boolean);
-	$: stringSearchResults = wordByWord
-		? formatWordResults(constitution, searchResults)
-		: formatResults(constitution, searchResults);
-
-	$: resultCounts = countBy(searchResults, 'searchForIndex');
-
 	let searchNode: TrieNode<string> = {};
+	let searchActive = false;
+	let searchResults: TrieSearchFoundRange[] = [];
+	let resultCounts: Record<number, number> = {};
+	let resultWordByWord = false;
 
-	const createSearchNode = (searchFor: string[]) => {
+	let caseSensitive = false;
+	let wordByWord = false;
+	let selectedTab = 'results';
+
+	const runSearch = () => {
+		const searchFor = [searchText1, searchText2, searchText3, searchText4, searchText5].filter(
+			Boolean
+		);
+
 		searchNode = {};
 		searchFor.forEach((sf) => {
 			const iterator = wordByWord ? createWordIterator(sf) : createCharacterIterator(sf);
 			addToTrieNode(iterator, searchNode);
 		});
-	};
 
-	$: createSearchNode(searchFor);
-
-	const onStringSearch = () => {
 		if (wordByWord) {
-			searchResults = trieSearchWords(constitution, { caseInsensitive }, ...searchFor);
+			searchResults = trieSearchWords(
+				constitution,
+				{ caseInsensitive: !caseSensitive },
+				...searchFor
+			);
 		} else {
-			searchResults = trieSearchString(constitution, { caseInsensitive }, ...searchFor);
+			searchResults = trieSearchString(
+				constitution,
+				{ caseInsensitive: !caseSensitive },
+				...searchFor
+			);
 		}
+
+		resultWordByWord = wordByWord;
+		resultCounts = countBy(searchResults, 'searchIndex');
+
+		searchActive = true;
 	};
 
-	const onStringSearchClear = () => {
-		stringSearchResults = emptyStringSearchResults;
+	const clearSearch = () => {
+		searchText1 = '';
+		searchText2 = '';
+		searchText3 = '';
+		searchText4 = '';
+		searchText5 = '';
+
+		searchNode = {};
+		searchResults = [];
+		resultCounts = {};
+		searchActive = false;
 	};
 </script>
 
 <div class="root">
-	<div class="header">
-		<p>
-			This demonstrates calling trieSearchString. Type one or more search phrases into the Search
-			For field, then click the Search button.
-		</p>
-		<code
-			>trieSearchString(text: string, options: &lbrace; caseInsensitive?: boolean &rbrace;
-			...searchFor: string[]) : TrieSearchResult[]</code
-		>
+	<div class="search-inputs">
+		<Label text="search phrases" />
+		<div />
+		<Input bind:value={searchText1} /><SearchBadge
+			searchIndex={0}
+			count={resultCounts[0] || (searchText1 && searchActive ? 0 : undefined)}
+		/>
+		<Input bind:value={searchText2} /><SearchBadge
+			searchIndex={1}
+			count={resultCounts[1] || (searchText2 && searchActive ? 0 : undefined)}
+		/>
+		<Input bind:value={searchText3} /><SearchBadge
+			searchIndex={2}
+			count={resultCounts[2] || (searchText3 && searchActive ? 0 : undefined)}
+		/>
+		<Input bind:value={searchText4} /><SearchBadge
+			searchIndex={3}
+			count={resultCounts[3] || (searchText4 && searchActive ? 0 : undefined)}
+		/>
+		<Input bind:value={searchText5} /><SearchBadge
+			searchIndex={4}
+			count={resultCounts[4] || (searchText5 && searchActive ? 0 : undefined)}
+		/>
 	</div>
-	<div class="search">
-		<div class="search-inputs">
-			<Input bind:value={searchText1} /><SearchBadge searchIndex={0} count={resultCounts[0]} />
-			<Input bind:value={searchText2} /><SearchBadge searchIndex={1} count={resultCounts[1]} />
-			<Input bind:value={searchText3} /><SearchBadge searchIndex={2} count={resultCounts[2]} />
-			<Input bind:value={searchText4} /><SearchBadge searchIndex={3} count={resultCounts[3]} />
-			<Input bind:value={searchText5} /><SearchBadge searchIndex={4} count={resultCounts[4]} />
-		</div>
-		<div class="actions">
-			<Button on:click={onStringSearch}>Search</Button>
-			<Button on:click={onStringSearchClear}>Clear</Button>
-			<Switch onText="Case insensitive" bind:checked={caseInsensitive} variant="colorful" />
-			<Switch onText="Word-by-word" bind:checked={wordByWord} variant="colorful" />
-		</div>
-		<div>
+	<div class="search-options">
+		<Label text="options" forwardClick={false} variant="boxed" for="nothing">
+			<div class="search-option-items">
+				<Switch onText="case-sensitive" bind:checked={caseSensitive} />
+				<Switch onText="word-by-word" bind:checked={wordByWord} />
+			</div>
+		</Label>
+	</div>
+	<div class="search-actions">
+		<Button variant="secondary" on:click={clearSearch}>Clear</Button>
+		<Button on:click={runSearch}>Search</Button>
+	</div>
+	<div class="search-result-tabs">
+		<TabList bind:selectedValue={selectedTab}>
+			<Tab value="results">Search Results</Tab>
+			<Tab value="searchTree">Search Tree</Tab>
+		</TabList>
+	</div>
+	<div class="search-results">
+		{#if selectedTab === 'results'}
+			<SearchResults text={constitution} results={searchResults} wordByWord={resultWordByWord} />
+		{:else if selectedTab === 'searchTree'}
 			<TrieTree node={searchNode} />
-		</div>
-	</div>
-
-	<div class="results">
-		{#each stringSearchResults as result}
-			<span
-				class="result"
-				class:match={result.isMatch}
-				class:in-range={result.inRange}
-				style={`--search-for-color: ${
-					stringSearchForColors[result.searchForIndex] || 'lightslategray'
-				}`}>{result.value}</span
-			>
-		{/each}
+		{/if}
 	</div>
 </div>
 
 <style>
 	.root {
 		display: grid;
-		grid-template-columns: 40% 60%;
-		grid-template-rows: auto auto;
-		grid-template-areas: 'header header' 'search results';
+		grid-template-columns: auto auto 1fr;
+		grid-template-rows: auto auto auto auto auto;
+		grid-template-areas: '. . tabs' 'inputs options results' 'inputs actions results' '. . results';
 		column-gap: 1em;
-	}
-
-	.header {
-		grid-area: header;
-	}
-
-	.search {
-		grid-area: search;
-		padding: 1em;
+		row-gap: 1em;
+		align-items: flex-start;
 	}
 
 	.search-inputs {
 		display: grid;
+		grid-area: inputs;
 		grid-template-columns: 1fr auto;
 		grid-template-rows: auto auto auto auto auto;
 		row-gap: 1em;
@@ -272,32 +157,64 @@
 		align-items: center;
 	}
 
-	.actions {
+	.search-options {
+		align-self: flex-end;
+		grid-area: options;
+		justify-self: stretch;
 		display: grid;
-		grid-template-columns: auto auto auto;
+		row-gap: 0.25em;
 	}
 
-	.results {
+	.search-actions {
+		align-self: flex-start;
+		display: grid;
+		grid-area: actions;
+		grid-template-columns: auto auto;
+		justify-self: center;
+		margin-bottom: 2em;
+		column-gap: 1em;
+	}
+
+	.search-option-items {
+		grid-area: options;
+		justify-self: flex-start;
+		font-size: 0.8em;
+		display: grid;
+		row-gap: 0.25em;
+		padding: 1em;
+	}
+
+	.search-result-tabs {
+		grid-area: tabs;
+	}
+
+	.search-results {
 		grid-area: results;
-		line-height: 1.6em;
 		border: 1px solid gray;
-		padding: 2em;
-		max-width: 900px;
+		padding: 1em;
 		max-height: 500px;
 		overflow: hidden;
 		overflow-y: scroll;
 		overscroll-behavior: contain;
 	}
 
-	.result.match {
-		background-color: var(--search-for-color);
-		color: white;
-		padding: 0 0.25em;
-		display: inline-block;
-	}
+	@media only screen and (max-width: 900px) {
+		.root {
+			grid-template-columns: auto;
+			grid-template-rows: auto;
+			grid-template-areas: 'inputs' 'options' 'actions' 'tabs' 'results';
+			align-items: flex-start;
+		}
 
-	.result.in-range {
-		background-color: lightslategray;
-		color: white;
+		.search-options {
+			justify-self: center;
+		}
+
+		.search-results {
+			overflow-y: hidden;
+			max-height: unset;
+			max-width: unset;
+			overscroll-behavior: unset;
+		}
 	}
 </style>

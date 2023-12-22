@@ -1,11 +1,8 @@
 export const searchColors = [
     'steelblue',
-    'seagreen',
-    'darksalmon',
-    'darkgoldenrod',
-    'mediumpurple',
     'indianred',
-    'thistle',
-    'palegoldenrod',
+    'green',
+    'goldenrod',
+    'mediumpurple',
     'silver'
 ];

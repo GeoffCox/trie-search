@@ -130,11 +130,11 @@
 
 	export let text: string;
 	export let results: TrieSearchFoundRange[] = [];
-	export let wordByWord = false;
+	export let wholeWord = false;
 
 	/* ----- State ----- */
 
-	$: formattedResults = wordByWord
+	$: formattedResults = wholeWord
 		? formatWordResults(text, results)
 		: formatResults(text, results);
 </script>

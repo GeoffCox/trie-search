@@ -9,7 +9,7 @@
 </script>
 
 <div class="root light-mode">
-	<div class="header">@geoffcox/trie-search</div>
+	<div class="header">@geoffcox/trie-search demo</div>
 	<div class="introduction">
 		This demonstrates this Trie search using the US constitution. All occurances of of multiple
 		words or phrases are found with a single pass over the text.
@@ -38,8 +38,8 @@
 	.header {
 		background-color: #222;
 		color: #ddd;
-		font-size: 1.6em;
-		padding: 0.25em;
+		font-size: 1.2em;
+		padding: 0.5em;
 	}
 
 	.introduction {

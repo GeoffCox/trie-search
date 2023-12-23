@@ -27,10 +27,10 @@
 	let searchActive = false;
 	let searchResults: TrieSearchFoundRange[] = [];
 	let resultCounts: Record<number, number> = {};
-	let resultWordByWord = false;
+	let resultWholeWord = false;
 
 	let caseSensitive = false;
-	let wordByWord = false;
+	let wholeWord = false;
 	let selectedTab = 'results';
 
 	$: {
@@ -46,11 +46,11 @@
 
 		searchNode = {};
 		searchFor.forEach((sf) => {
-			const iterator = wordByWord ? createWordIterator(sf) : createCharacterIterator(sf);
+			const iterator = wholeWord ? createWordIterator(sf) : createCharacterIterator(sf);
 			addToTrieNode(iterator, searchNode);
 		});
 
-		if (wordByWord) {
+		if (wholeWord) {
 			searchResults = trieSearchWords(
 				constitution,
 				{
@@ -68,7 +68,7 @@
 			);
 		}
 
-		resultWordByWord = wordByWord;
+		resultWholeWord = wholeWord;
 		resultCounts = countBy(searchResults, 'searchIndex');
 
 		searchActive = true;
@@ -117,7 +117,7 @@
 		<Label text="options" forwardClick={false} variant="boxed" for="nothing">
 			<div class="search-option-items">
 				<Switch onText="case-sensitive" bind:checked={caseSensitive} />
-				<Switch onText="word-by-word" bind:checked={wordByWord} />
+				<Switch onText="whole word" bind:checked={wholeWord} />
 			</div>
 		</Label>
 	</div>
@@ -133,7 +133,7 @@
 	</div>
 	{#if selectedTab === 'results'}
 		<div class="search-results">
-			<SearchResults text={constitution} results={searchResults} wordByWord={resultWordByWord} />
+			<SearchResults text={constitution} results={searchResults} wholeWord={resultWholeWord} />
 		</div>
 	{:else if selectedTab === 'searchTree'}
 		<div class="search-tree">
